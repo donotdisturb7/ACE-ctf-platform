@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart logs build rebuild clean status shell test
+.PHONY: help setup start stop restart logs build rebuild clean fresh fresh-all status shell test
 
 # Variables
 DOCKER_COMPOSE = docker compose
@@ -71,7 +71,57 @@ clean: ## Supprimer tous les conteneurs et volumes (⚠ perte de données)
 	@read -p "Confirmer ? (yes/no): " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
 		$(DOCKER_COMPOSE) down -v --remove-orphans; \
+		docker volume rm -f ace-ctf-platform_ctfd_db ace-ctf-platform_ctfd_redis ace-ctf-platform_ctfd_uploads ace-ctf-platform_ctfd_logs 2>/dev/null || true; \
 		echo "✓ Nettoyage terminé"; \
+	else \
+		echo "✗ Annulé"; \
+	fi
+
+fresh: ## Nettoyage complet CTFd + rebuild + redémarrage
+	@echo "⚠ ATTENTION: Fresh start CTFd - Suppression totale des données !"
+	@read -p "Confirmer ? (yes/no): " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		echo "→ Arrêt des conteneurs..."; \
+		$(DOCKER_COMPOSE) down -v --remove-orphans 2>/dev/null || true; \
+		echo "→ Suppression des volumes..."; \
+		docker volume rm -f ace-ctf-platform_ctfd_db ace-ctf-platform_ctfd_redis ace-ctf-platform_ctfd_uploads ace-ctf-platform_ctfd_logs 2>/dev/null || true; \
+		echo "→ Vérification..."; \
+		sleep 2; \
+		echo "→ Reconstruction des images..."; \
+		$(DOCKER_COMPOSE) build --no-cache ctfd; \
+		echo "→ Démarrage..."; \
+		$(DOCKER_COMPOSE) up -d; \
+		echo ""; \
+		echo "✓ Fresh start terminé !"; \
+		echo "  Interface: http://localhost:8000"; \
+		echo "  Logs: make logs"; \
+		echo ""; \
+		echo "⏳ Attendez 30 secondes pour l'initialisation complète"; \
+	else \
+		echo "✗ Annulé"; \
+	fi
+
+fresh-all: ## Fresh start TOTAL (CTFd + site d'inscription)
+	@echo "⚠ ATTENTION: Fresh start TOTAL - Suppression CTFd + Site d'inscription !"
+	@read -p "Confirmer ? (yes/no): " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		echo "→ Arrêt CTFd..."; \
+		$(DOCKER_COMPOSE) down -v --remove-orphans 2>/dev/null || true; \
+		echo "→ Suppression volumes CTFd..."; \
+		docker volume rm -f ace-ctf-platform_ctfd_db ace-ctf-platform_ctfd_redis ace-ctf-platform_ctfd_uploads ace-ctf-platform_ctfd_logs 2>/dev/null || true; \
+		echo "→ Arrêt site d'inscription..."; \
+		cd ../ACE-website && docker compose down -v --remove-orphans 2>/dev/null || true; \
+		echo "→ Suppression volumes site..."; \
+		docker volume rm -f ace-website_postgres_data ace-website_redis_data 2>/dev/null || true; \
+		echo "→ Reconstruction..."; \
+		cd ../ACE-website && docker compose build --no-cache backend && docker compose up -d; \
+		cd ../ACE-ctf-platform && $(DOCKER_COMPOSE) build --no-cache ctfd && $(DOCKER_COMPOSE) up -d; \
+		echo ""; \
+		echo "✓ Fresh start TOTAL terminé !"; \
+		echo "  Site: http://localhost:3000"; \
+		echo "  CTFd: http://localhost:8000"; \
+		echo ""; \
+		echo "⏳ Attendez 30 secondes pour l'initialisation complète"; \
 	else \
 		echo "✗ Annulé"; \
 	fi

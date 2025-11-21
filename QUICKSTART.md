@@ -1,152 +1,105 @@
 # Démarrage Rapide - CTFd ACE 2025
 
-
-
-### 1. Prérequis
+## Prérequis
 
 ```bash
-# Vérifier Docker
 docker --version
 docker compose --version
 
 # Vérifier que le site d'inscription est lancé
-curl http://localhost:5000/api
+curl http://localhost:5000/health
 ```
 
-### 2. Configuration
+## Installation
 
 ```bash
-cd escape-game-ctfd
+cd ACE-ctf-platform
 
 # Copier le fichier d'environnement
 cp .env.example .env
 
 # Éditer avec vos vraies valeurs
-nano .env  # ou vim, code, etc.
+nano .env
 ```
 
-**Minimum à modifier dans `.env` :**
+### Variables critiques dans `.env`
+
 ```env
 SECRET_KEY=generer_une_cle_aleatoire_ici
-MYSQL_ROOT_PASSWORD=votre_mot_de_passe
-MYSQL_PASSWORD=votre_mot_de_passe_ctfd
-REGISTRATION_SITE_ADMIN_PASSWORD=le_vrai_mot_de_passe_admin
+MYSQL_ROOT_PASSWORD=changeme
+MYSQL_PASSWORD=changeme
+JWT_SECRET=doit_correspondre_au_site_inscription
+CTFD_ADMIN_PASSWORD=mot_de_passe_admin
 ```
 
-### 3. Créer le réseau (si nécessaire)
+## Démarrage
 
 ```bash
-docker network create ace-network
-```
-
-### 4. Démarrer
-
-```bash
+# Démarrer tous les services
 docker compose up -d
-```
 
-### 5. Vérifier
-
-```bash
-# Attendre 30 secondes puis tester
-python scripts/test_sync.py
-```
-
-### 6. Accéder
-
-- **CTFd** : http://localhost:8000
-- **Traefik** : http://localhost:8080
-
-## Commandes utiles
-
-```bash
-# Voir les logs
+# Vérifier les logs
 docker compose logs -f ctfd
+```
+
+## Accès
+
+- CTFd: http://localhost:8000
+- Traefik Dashboard: http://localhost:8082
+
+## Commandes Utiles
+
+```bash
+# Aide (liste toutes les commandes)
+make help
+
+# Logs CTFd
+make logs
 
 # Redémarrer
-docker compose restart
+make restart
 
-# Arrêter
-docker compose down
+# Rebuild après modification plugin
+make rebuild
 
-# Tout supprimer (ATTENTION: perte de données)
-docker compose down -v
+# Fresh start (supprime tout)
+make fresh
 ```
 
-## Tester la synchronisation
+## Test SSO
+
+1. Se connecter sur le site d'inscription (http://localhost:3000)
+2. Cliquer sur "Accéder au CTFd" dans le dashboard
+3. Vérifier la connexion automatique sur CTFd
+
+## Problèmes Courants
+
+### Erreur "network not found"
 
 ```bash
-# Test complet
-python scripts/test_sync.py
-
-# Voir les équipes synchronisées
-curl http://localhost:8000/api/v1/teams | jq
+# Le réseau est créé automatiquement par le site d'inscription
+cd ../ACE-website && docker compose up -d
 ```
 
-## Importer les challenges
+### SSO ne fonctionne pas
+
+Vérifier que `JWT_SECRET` est identique dans les deux projets:
 
 ```bash
-# 1. Créer un token API dans CTFd
-#    Settings > Access Tokens > Create
+# Site d'inscription
+grep JWT_SECRET ../ACE-website/.env
 
-# 2. Exporter le token
-export CTFD_TOKEN="votre_token_ici"
-
-# 3. Importer
-python scripts/import_challenges.py
+# CTFd
+grep JWT_SECRET .env
 ```
 
-## Problèmes courants
-
-### Erreur "network ace-network not found"
+### Plugin ne charge pas
 
 ```bash
-docker network create ace-network
-docker compose up -d
+docker compose up -d --build ctfd
+docker compose logs ctfd | grep plugin
 ```
 
-### Erreur "authentication failed"
+## Documentation
 
-Vérifiez votre `.env` :
-```bash
-cat .env | grep REGISTRATION_SITE
-```
-
-### Les équipes ne se créent pas
-
-```bash
-# Vérifier les logs
-docker compose logs ctfd | grep registration_sync
-
-# Synchronisation manuelle
-docker compose exec ctfd curl -X POST http://localhost:8000/admin/registration-sync/manual-sync
-```
-
-## Prochaines étapes
-
-1. Vérifier que les équipes du site apparaissent dans CTFd
-2. Importer les challenges
-3. Tester la résolution d'un challenge
-4. Vérifier que les scores remontent au site
-5. fix create team in ctfd even tho already in a team from the register website
-6. fix sync 
-
-## Architecture réseau
-
-```
-┌─────────────────────────────────────┐
-│   Réseau ace-network (externe)      │
-│                                     │
-│   ┌──────────┐      ┌──────────┐   │
-│   │ backend  │◄────►│  ctfd    │   │
-│   │  :5000   │      │  :8000   │   │
-│   └──────────┘      └──────────┘   │
-│                                     │
-└─────────────────────────────────────┘
-```
-
-Le réseau `ace-network` permet la communication entre le site d'inscription (backend) et CTFd.
-
----
-
-** Consultez le [README.md](README.md) complet.
+- [README.md](./README.md) - Documentation complète

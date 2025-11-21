@@ -23,6 +23,22 @@ services:
       - JWT_SECRET=${JWT_SECRET:-changez-moi-en-production}
       - CTFD_PUBLIC_URL=${CTFD_PUBLIC_URL:-http://localhost:8000}
 
+      # Team Management (force SSO-only teams)
+      - USER_MODE=teams
+      - TEAM_CREATION=admins
+      - TEAM_DISBANDING=admins
+
+      # CTFd Setup (bypass setup wizard - SECURITY)
+      - CTF_NAME=${CTF_NAME:-ACE Escape Game 2025}
+      - CTF_DESCRIPTION=${CTF_DESCRIPTION:-Plateforme CTF pour ACE Escape Game Cybersécurité}
+      - CTF_THEME=core
+      - CHALLENGE_VISIBILITY=public
+
+      # Admin Initialization (initial_setup plugin)
+      - CTFD_ADMIN_USER=${CTFD_ADMIN_USER:-admin}
+      - CTFD_ADMIN_EMAIL=${CTFD_ADMIN_EMAIL:-admin@ctfd.local}
+      - CTFD_ADMIN_PASSWORD=${CTFD_ADMIN_PASSWORD}
+
       # Mail Configuration (optional, site d'inscription gère les emails)
       - MAIL_SERVER=${MAIL_SERVER}
       - MAIL_PORT=${MAIL_PORT}

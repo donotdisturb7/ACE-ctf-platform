@@ -8,7 +8,7 @@ import requests
 import logging
 from flask import Blueprint
 from apscheduler.schedulers.background import BackgroundScheduler
-from CTFd.models import Teams, Solves
+from CTFd.models import Teams
 from CTFd.utils.scores import get_standings
 from datetime import datetime
 
@@ -23,6 +23,7 @@ ADMIN_PASSWORD = os.getenv('REGISTRATION_SITE_ADMIN_PASSWORD', '')
 
 # Scheduler global
 scheduler = None
+flask_app = None
 
 
 class ScoreSyncAPI:
@@ -88,28 +89,30 @@ class ScoreSyncAPI:
 score_api = ScoreSyncAPI()
 
 
-def get_ctfd_scoreboard():
+def get_ctfd_scoreboard(app=None):
     """
     Récupérer le scoreboard complet de CTFd avec les scores actuels
     """
+    from flask import current_app
+
     try:
-        # Utiliser la fonction get_standings de CTFd
-        standings = get_standings()
+        # Utiliser le contexte Flask si fourni, sinon utiliser current_app
+        app_context = app or current_app
 
-        scoreboard = []
-        for position, team in enumerate(standings, start=1):
-            # Compter le nombre de solves
-            solve_count = Solves.query.filter_by(team_id=team.id).count()
+        with app_context.app_context():
+            # Utiliser la fonction get_standings de CTFd
+            standings = get_standings()
 
-            scoreboard.append({
-                'ctfd_team_id': team.id,
-                'team_name': team.name,
-                'score': team.score,
-                'rank': position,
-                'solves': solve_count
-            })
+            scoreboard = []
+            for position, team in enumerate(standings, start=1):
+                scoreboard.append({
+                    'ctfd_team_id': team.id,
+                    'team_name': team.name,
+                    'score': team.score,
+                    'rank': position
+                })
 
-        return scoreboard
+            return scoreboard
 
     except Exception as e:
         logger.error(f"Erreur lors de la récupération du scoreboard: {e}")
@@ -153,9 +156,11 @@ def sync_scores_to_registration_site():
     Fonction principale de synchronisation des scores
     Appelée toutes les 30 secondes par le scheduler
     """
+    global flask_app
+
     try:
-        # Récupérer le scoreboard CTFd
-        scoreboard = get_ctfd_scoreboard()
+        # Récupérer le scoreboard CTFd avec le contexte Flask
+        scoreboard = get_ctfd_scoreboard(flask_app)
 
         if not scoreboard:
             logger.debug("Pas de scores à synchroniser")
@@ -195,7 +200,10 @@ def sync_scores_to_registration_site():
 
 def load(app):
     """Charger le plugin dans CTFd"""
-    global scheduler
+    global scheduler, flask_app
+
+    # Stocker l'app pour utilisation dans le scheduler
+    flask_app = app
 
     logger.info("Chargement du plugin score_sync")
 
