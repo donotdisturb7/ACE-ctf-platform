@@ -1,0 +1,155 @@
+services:
+  # CTFd Application
+  ctfd:
+    build: .
+    user: root
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      # CTFd Core Configuration
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=mysql+pymysql://ctfd:${MYSQL_PASSWORD}@db/ctfd
+      - REDIS_URL=redis://cache:6379
+      - WORKERS=4
+      - LOG_FOLDER=/var/log/CTFd
+      - UPLOAD_FOLDER=/var/uploads
+      - REVERSE_PROXY=true
+
+      # Integration with Registration Site (ACE 2025)
+      - REGISTRATION_SITE_URL=${REGISTRATION_SITE_URL}
+      - REGISTRATION_SITE_ADMIN_EMAIL=${REGISTRATION_SITE_ADMIN_EMAIL}
+      - REGISTRATION_SITE_ADMIN_PASSWORD=${REGISTRATION_SITE_ADMIN_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET:-changez-moi-en-production}
+      - CTFD_PUBLIC_URL=${CTFD_PUBLIC_URL:-http://localhost:8000}
+
+      # Mail Configuration (optional, site d'inscription gère les emails)
+      - MAIL_SERVER=${MAIL_SERVER}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAILFROM_ADDR=${MAILFROM_ADDR}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_TLS=true
+      - MAIL_SSL=false
+
+    volumes:
+      # Plugins
+      - ./plugins/registration_sync:/opt/CTFd/CTFd/plugins/registration_sync
+      - ./plugins/score_sync:/opt/CTFd/CTFd/plugins/score_sync
+      - ./plugins/auth_sync:/opt/CTFd/CTFd/plugins/auth_sync
+      - ./plugins/room_display:/opt/CTFd/CTFd/plugins/room_display
+
+      # Themes (optionnel)
+      # NOTE: Le montage du volume themes écrase le thème core de CTFd
+      # Pour utiliser un thème personnalisé, copiez-le dans l'image ou utilisez un montage nommé
+      # - ./themes:/opt/CTFd/CTFd/themes
+
+      # Uploads persistants
+      - ctfd_uploads:/var/uploads
+
+      # Logs
+      - ctfd_logs:/var/log/CTFd
+
+    depends_on:
+      - db
+      - cache
+
+    networks:
+      - ctfd-internal
+      - ace-network  # Réseau partagé avec le site d'inscription
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MariaDB Database
+  db:
+    image: mariadb:10.11
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=ctfd
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=ctfd
+      - MARIADB_AUTO_UPGRADE=1
+    volumes:
+      - ctfd_db:/var/lib/mysql
+    networks:
+      - ctfd-internal
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --wait_timeout=28800
+      - --log-warnings=0
+
+  # Redis Cache
+  cache:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - ctfd_redis:/data
+    networks:
+      - ctfd-internal
+
+  # Traefik (Reverse Proxy pour les challenges)
+  traefik:
+    image: traefik:v2.10
+    restart: always
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=ctfd-challenges"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "8081:80"    # Changé pour éviter conflit avec nginx
+      - "8443:443"   # Changé pour éviter conflit
+      - "8082:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - ctfd-challenges
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.ctf.local`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+
+  # ===== Challenges =====
+
+  challenge_test:
+    build: ./challenges/test/deploy
+    restart: always
+    networks:
+      - ctfd-challenges
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.test.rule=Host(`test.challenges.local`)"
+      - "traefik.http.services.test.loadbalancer.server.port=5000"
+
+# Networks
+networks:
+  ctfd-internal:
+    driver: bridge
+    internal: true  # Pas d'accès internet pour la DB/Redis
+
+  ctfd-challenges:
+    driver: bridge
+
+  ace-network:
+    name: ace-website_ace-network
+    external: true  # Réseau créé par le site d'inscription ACE
+    # Ce réseau permet à CTFd de communiquer avec backend:5000
+
+# Volumes
+volumes:
+  ctfd_db:
+    driver: local
+  ctfd_redis:
+    driver: local
+  ctfd_uploads:
+    driver: local
+  ctfd_logs:
+    driver: local
