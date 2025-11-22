@@ -1,15 +1,11 @@
-"""
-Plugin de synchronisation avec le site d'inscription ACE 2025
-Synchronise automatiquement les équipes depuis le site Next.js/Express existant
-"""
-
 import os
 import requests
 import logging
-from flask import Blueprint
+from flask import Blueprint, request
 from apscheduler.schedulers.background import BackgroundScheduler
 from CTFd.models import db, Teams, Users
 from CTFd.utils.security.auth import generate_user_token
+from CTFd.plugins import bypass_csrf_protection
 from datetime import datetime
 
 # Configure logging
@@ -160,23 +156,71 @@ def sync_teams_from_registration_site():
                         ).first()
 
                     if existing_team:
-                        # Équipe existe déjà, vérifier et ajouter les nouveaux membres
-                        new_members_count = 0
+                        # Équipe existe déjà, synchroniser les membres
+                        # Récupérer la liste des emails des membres actuels
+                        current_member_emails = set()
                         for member in team_data.get('members', []):
-                            # Vérifier si l'utilisateur existe déjà
-                            existing_user = Users.query.filter_by(
-                                email=member['email']
-                            ).first()
+                            member_email = member.get('email')
+                            if member_email:
+                                current_member_emails.add(member_email)
 
-                            # Ne pas créer de comptes utilisateurs individuels
-                            # Les utilisateurs n'utilisent pas CTFd directement
-                            new_members_count += 1
-                            logger.info(f"  Nouveau membre détecté: {member.get('firstName')} {member.get('lastName')} ({member.get('email')})")
-                        
-                        if new_members_count > 0:
-                            db.session.commit()
-                            logger.info(f"Équipe mise à jour: {existing_team.name} (+{new_members_count} membre(s))")
-                        
+                        # Retirer les utilisateurs qui ne sont plus dans l'équipe
+                        team_users = Users.query.filter_by(team_id=existing_team.id).all()
+                        for user in team_users:
+                            if user.email not in current_member_emails:
+                                user.team_id = None
+                                logger.info(f"Utilisateur {user.email} retiré de l'équipe {existing_team.name}")
+
+                        # Ajouter ou mettre à jour les membres
+                        for member in team_data.get('members', []):
+                            member_email = member.get('email')
+                            if not member_email:
+                                continue
+
+                            # Vérifier si l'utilisateur existe dans CTFd
+                            existing_user = Users.query.filter_by(email=member_email).first()
+
+                            if not existing_user:
+                                # Créer l'utilisateur s'il n'existe pas
+                                from CTFd.utils.security.passwords import hash_password
+                                import os
+
+                                fake_password = hash_password(os.urandom(32).hex())
+                                username = member_email.split('@')[0]
+
+                                new_user = Users(
+                                    name=username,
+                                    email=member_email,
+                                    password=fake_password,
+                                    type='user',
+                                    team_id=existing_team.id,
+                                    verified=True,
+                                    hidden=False,
+                                    banned=False
+                                )
+                                db.session.add(new_user)
+                                db.session.flush()
+                                logger.info(f"Utilisateur créé: {member_email} pour équipe {existing_team.name}")
+                            else:
+                                # Mettre à jour l'équipe de l'utilisateur si nécessaire
+                                if existing_user.team_id != existing_team.id:
+                                    existing_user.team_id = existing_team.id
+                                    logger.info(f"Utilisateur {member_email} assigné à l'équipe {existing_team.name}")
+
+                        # Mettre à jour le capitaine
+                        captain_email = None
+                        for member in team_data.get('members', []):
+                            if member.get('id') == team_data.get('captainId'):
+                                captain_email = member.get('email')
+                                break
+
+                        if captain_email:
+                            captain_user = Users.query.filter_by(email=captain_email).first()
+                            if captain_user and existing_team.captain_id != captain_user.id:
+                                existing_team.captain_id = captain_user.id
+                                logger.info(f"Capitaine mis à jour pour {existing_team.name}: {captain_email}")
+
+                        db.session.commit()
                         updated_count += 1
                         continue
 
@@ -194,9 +238,51 @@ def sync_teams_from_registration_site():
 
                     logger.info(f"Équipe créée: {new_team.name} (ID: {new_team.id})")
 
-                    # Ne pas créer de comptes utilisateurs individuels
-                    # Les utilisateurs n'utilisent pas CTFd directement - ils font les épreuves sur le site d'inscription
-                    # CTFd sert uniquement à calculer les scores en arrière-plan et les envoyer au site
+                    # Créer les comptes utilisateurs pour tous les membres
+                    for member in team_data.get('members', []):
+                        member_email = member.get('email')
+                        if not member_email:
+                            continue
+
+                        # Vérifier si l'utilisateur existe déjà
+                        existing_user = Users.query.filter_by(email=member_email).first()
+
+                        if not existing_user:
+                            from CTFd.utils.security.passwords import hash_password
+                            import os
+
+                            fake_password = hash_password(os.urandom(32).hex())
+                            username = member_email.split('@')[0]
+
+                            new_user = Users(
+                                name=username,
+                                email=member_email,
+                                password=fake_password,
+                                type='user',
+                                team_id=new_team.id,
+                                verified=True,
+                                hidden=False,
+                                banned=False
+                            )
+                            db.session.add(new_user)
+                            logger.info(f"Utilisateur créé: {member_email} pour nouvelle équipe {new_team.name}")
+                        else:
+                            # Mettre à jour l'équipe de l'utilisateur
+                            existing_user.team_id = new_team.id
+                            logger.info(f"Utilisateur {member_email} assigné à la nouvelle équipe {new_team.name}")
+
+                    # Assigner le capitaine
+                    captain_email = None
+                    for member in team_data.get('members', []):
+                        if member.get('id') == team_data.get('captainId'):
+                            captain_email = member.get('email')
+                            break
+
+                    if captain_email:
+                        captain_user = Users.query.filter_by(email=captain_email).first()
+                        if captain_user:
+                            new_team.captain_id = captain_user.id
+                            logger.info(f"Capitaine assigné pour {new_team.name}: {captain_email}")
 
                     db.session.commit()
 
@@ -286,8 +372,190 @@ def load(app):
 
         return status()
 
-    # Enregistrer le blueprint
+    @blueprint.route('/webhook', methods=['POST'])
+    @bypass_csrf_protection
+    def webhook_sync():
+        """Endpoint webhook pour synchronisation instantanée depuis le backend"""
+        import hmac
+        import hashlib
+
+        WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'changeme_webhook_secret')
+
+        signature = request.headers.get('X-Webhook-Signature')
+        if not signature:
+            return {'success': False, 'error': 'Missing signature'}, 401
+
+        body = request.get_data()
+        expected_signature = hmac.new(
+            WEBHOOK_SECRET.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_signature):
+            logger.warning("Webhook signature invalide")
+            return {'success': False, 'error': 'Invalid signature'}, 401
+
+        data = request.get_json()
+        event_type = data.get('event')
+
+        logger.info(f"Webhook reçu: {event_type}")
+
+        if event_type in ['team.created', 'team.updated', 'team.member_added', 'team.member_removed']:
+            sync_teams_from_registration_site()
+            return {'success': True, 'message': 'Synchronisation déclenchée'}
+
+        return {'success': False, 'error': 'Unknown event type'}, 400
+
+    # Créer un blueprint séparé pour le webhook (public, pas sous /admin)
+    webhook_blueprint = Blueprint(
+        'registration_sync_webhook',
+        __name__,
+        url_prefix='/api/registration-sync'
+    )
+
+    @webhook_blueprint.route('/webhook', methods=['POST'])
+    @bypass_csrf_protection
+    def webhook_public():
+        """Endpoint webhook public pour synchronisation instantanée depuis le backend"""
+        import hmac
+        import hashlib
+
+        WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'changeme_webhook_secret')
+
+        signature = request.headers.get('X-Webhook-Signature')
+        if not signature:
+            logger.warning("Webhook reçu sans signature")
+            return {'success': False, 'error': 'Missing signature'}, 401
+
+        body = request.get_data()
+        expected_signature = hmac.new(
+            WEBHOOK_SECRET.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_signature):
+            logger.warning("Webhook signature invalide")
+            return {'success': False, 'error': 'Invalid signature'}, 401
+
+        data = request.get_json()
+        event_type = data.get('event')
+        event_data = data.get('data', {})
+
+        logger.info(f"Webhook reçu: {event_type} - Data: {event_data}")
+
+        if event_type == 'team.deleted':
+            team_id_to_delete = data.get('data', {}).get('teamId')
+            ctfd_team_id = data.get('data', {}).get('ctfdTeamId')
+            team_name = data.get('data', {}).get('teamName')
+            
+            logger.info(f"Traitement team.deleted: teamId={team_id_to_delete}, ctfdTeamId={ctfd_team_id}, teamName={team_name}")
+            
+            if ctfd_team_id or team_id_to_delete or team_name:
+                try:
+                    teams_to_delete = []
+                    
+                    # Priorité 1: ID CTFd s'il est fourni
+                    if ctfd_team_id:
+                        team = Teams.query.filter_by(id=ctfd_team_id).first()
+                        if team:
+                            teams_to_delete.append(team)
+                            logger.info(f"Équipe trouvée par ctfdTeamId: {team.name}")
+                    
+                    # Priorité 2: Nom exact de l'équipe
+                    if not teams_to_delete and team_name:
+                        team = Teams.query.filter_by(name=team_name).first()
+                        if team:
+                            teams_to_delete.append(team)
+                            logger.info(f"Équipe trouvée par nom: {team.name}")
+                    
+                    # Priorité 3: Recherche par UUID partiel (fallback)
+                    if not teams_to_delete and team_id_to_delete:
+                        teams_to_delete = Teams.query.filter(
+                            Teams.name.like(f'%{team_id_to_delete[-8:]}%')
+                        ).all()
+                        if teams_to_delete:
+                            logger.info(f"Équipe(s) trouvée(s) par UUID partiel: {[t.name for t in teams_to_delete]}")
+
+                    if not teams_to_delete:
+                        logger.warning(f"Aucune équipe trouvée pour suppression (ctfdId={ctfd_team_id}, uuid={team_id_to_delete}, name={team_name})")
+                        return {'success': False, 'message': 'Équipe non trouvée'}, 404
+
+                    for team in teams_to_delete:
+                        # Dissocier les utilisateurs avant de supprimer l'équipe
+                        Users.query.filter_by(team_id=team.id).update({'team_id': None})
+                        db.session.delete(team)
+                        logger.info(f"Équipe supprimée via webhook: {team.name} (ID: {team.id})")
+
+                    db.session.commit()
+                    return {'success': True, 'message': 'Équipe supprimée'}
+                except Exception as e:
+                    logger.error(f"Erreur lors de la suppression de l'équipe: {e}")
+                    db.session.rollback()
+                    return {'success': False, 'error': str(e)}, 500
+
+        if event_type == 'team.member_removed':
+            user_id = data.get('data', {}).get('userId')
+            team_id = data.get('data', {}).get('teamId')
+            
+            logger.info(f"Traitement team.member_removed: userId={user_id}, teamId={team_id}")
+
+            if user_id and team_id:
+                try:
+                    # S'assurer que le client est authentifié
+                    if not api_client.token:
+                        logger.info("Authentification nécessaire pour récupérer les infos utilisateur")
+                        api_client.authenticate()
+                    
+                    # Récupérer les infos utilisateur du site d'inscription pour trouver l'email
+                    response = requests.get(
+                        f"{REGISTRATION_SITE_URL}/admin/users/{user_id}",
+                        headers={"Authorization": f"Bearer {api_client.token}"},
+                        timeout=10
+                    )
+
+                    if response.status_code == 200:
+                        user_data = response.json().get('data', {}).get('user', {})
+                        user_email = user_data.get('email')
+                        
+                        logger.info(f"Email utilisateur récupéré: {user_email}")
+
+                        if user_email:
+                            # Trouver l'utilisateur CTFd par email
+                            ctfd_user = Users.query.filter_by(email=user_email).first()
+
+                            if ctfd_user and ctfd_user.team_id:
+                                old_team_id = ctfd_user.team_id
+                                ctfd_user.team_id = None
+                                db.session.commit()
+                                logger.info(f"Utilisateur {user_email} retiré de l'équipe {old_team_id} via webhook")
+                                return {'success': True, 'message': "Utilisateur retiré de l'équipe"}
+                            else:
+                                logger.warning(f"Utilisateur {user_email} non trouvé dans CTFd ou n'a pas d'équipe")
+                    else:
+                        logger.warning(f"Erreur lors de la récupération de l'utilisateur: {response.status_code}")
+
+                    # Si on n'a pas pu retirer l'utilisateur directement, faire une sync complète
+                    logger.info("Fallback: synchronisation complète")
+                    sync_teams_from_registration_site()
+                    return {'success': True, 'message': 'Synchronisation complète effectuée'}
+
+                except Exception as e:
+                    logger.error(f"Erreur lors du retrait du membre: {e}")
+                    # Fallback: synchronisation complète
+                    sync_teams_from_registration_site()
+                    return {'success': True, 'message': 'Synchronisation de secours effectuée'}
+
+        if event_type in ['team.created', 'team.updated', 'team.member_added']:
+            sync_teams_from_registration_site()
+            return {'success': True, 'message': 'Synchronisation déclenchée'}
+
+        return {'success': False, 'error': 'Unknown event type'}, 400
+
+    # Enregistrer les blueprints
     app.register_blueprint(blueprint)
+    app.register_blueprint(webhook_blueprint)
 
     # Configurer le scheduler pour la synchronisation automatique
     if not scheduler or not scheduler.running:

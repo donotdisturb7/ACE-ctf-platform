@@ -152,6 +152,17 @@ def load(app):
 
             user = Users.query.filter_by(email=email).first()
             user_type = 'admin' if user_data.get('isAdmin', False) else 'user'
+            team_id = user_data.get('teamId')
+
+            ctfd_team = None
+            is_team_captain = False
+            if team_id:
+                team_info = auth_api.get_user_team(user_data.get('id'), token)
+                if team_info and team_info.get('ctfdTeamId'):
+                    ctfd_team = Teams.query.filter_by(id=team_info['ctfdTeamId']).first()
+                    if ctfd_team:
+                        logger.info(f"Équipe CTFd trouvée: {ctfd_team.name} (ID: {ctfd_team.id})")
+                        is_team_captain = team_info.get('captainId') == user_data.get('id')
 
             if not user:
                 from CTFd.utils.security.passwords import hash_password
@@ -163,19 +174,33 @@ def load(app):
                     email=email,
                     password=fake_password,
                     type=user_type,
-                    team_id=None,
+                    team_id=ctfd_team.id if ctfd_team else None,
                     verified=True,
                     hidden=False,
                     banned=False
                 )
                 db.session.add(user)
                 db.session.commit()
-                logger.info(f"Utilisateur créé via SSO: {email} (type={user_type})")
+                logger.info(f"Utilisateur créé via SSO: {email} (type={user_type}, team_id={user.team_id})")
             else:
+                needs_update = False
                 if user.type != user_type:
                     logger.info(f"Mise à jour du type d'utilisateur {email}: {user.type} -> {user_type}")
                     user.type = user_type
+                    needs_update = True
+
+                if ctfd_team and user.team_id != ctfd_team.id:
+                    logger.info(f"Mise à jour de l'équipe {email}: {user.team_id} -> {ctfd_team.id}")
+                    user.team_id = ctfd_team.id
+                    needs_update = True
+
+                if needs_update:
                     db.session.commit()
+
+            if is_team_captain and ctfd_team and ctfd_team.captain_id != user.id:
+                ctfd_team.captain_id = user.id
+                db.session.commit()
+                logger.info(f"Capitaine assigné pour l'équipe {ctfd_team.name}: {user.email}")
 
             login_user(user)
 

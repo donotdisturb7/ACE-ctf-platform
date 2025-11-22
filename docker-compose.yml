@@ -22,6 +22,7 @@ services:
       - REGISTRATION_SITE_ADMIN_PASSWORD=${REGISTRATION_SITE_ADMIN_PASSWORD}
       - JWT_SECRET=${JWT_SECRET:-changez-moi-en-production}
       - CTFD_PUBLIC_URL=${CTFD_PUBLIC_URL:-http://localhost:8000}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
 
       # Team Management (force SSO-only teams)
       - USER_MODE=teams
