@@ -6,48 +6,12 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      # CTFd Core Configuration
-      - SECRET_KEY=${SECRET_KEY}
+      # Variables calculées à partir du .env
       - DATABASE_URL=mysql+pymysql://ctfd:${MYSQL_PASSWORD}@db/ctfd
       - REDIS_URL=redis://cache:6379
-      - WORKERS=4
-      - LOG_FOLDER=/var/log/CTFd
-      - UPLOAD_FOLDER=/var/uploads
-      - REVERSE_PROXY=true
-
-      # Integration with Registration Site (ACE 2025)
-      - REGISTRATION_SITE_URL=${REGISTRATION_SITE_URL}
-      - REGISTRATION_SITE_ADMIN_EMAIL=${REGISTRATION_SITE_ADMIN_EMAIL}
-      - REGISTRATION_SITE_ADMIN_PASSWORD=${REGISTRATION_SITE_ADMIN_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET:-changez-moi-en-production}
-      - CTFD_PUBLIC_URL=${CTFD_PUBLIC_URL:-http://localhost:8000}
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
-
-      # Team Management (force SSO-only teams)
-      - USER_MODE=teams
-      - TEAM_CREATION=admins
-      - TEAM_DISBANDING=admins
-
-      # CTFd Setup (bypass setup wizard - SECURITY)
-      - CTF_NAME=${CTF_NAME:-ACE Escape Game 2025}
-      - CTF_DESCRIPTION=${CTF_DESCRIPTION:-Plateforme CTF pour ACE Escape Game Cybersécurité}
-      - CTF_THEME=core
-      - CHALLENGE_VISIBILITY=public
-
-      # Admin Initialization (initial_setup plugin)
-      - CTFD_ADMIN_USER=${CTFD_ADMIN_USER:-admin}
-      - CTFD_ADMIN_EMAIL=${CTFD_ADMIN_EMAIL:-admin@ctfd.local}
-      - CTFD_ADMIN_PASSWORD=${CTFD_ADMIN_PASSWORD}
-
-      # Mail Configuration (optional, site d'inscription gère les emails)
-      - MAIL_SERVER=${MAIL_SERVER}
-      - MAIL_PORT=${MAIL_PORT}
-      - MAILFROM_ADDR=${MAILFROM_ADDR}
-      - MAIL_USERNAME=${MAIL_USERNAME}
-      - MAIL_PASSWORD=${MAIL_PASSWORD}
-      - MAIL_TLS=true
-      - MAIL_SSL=false
 
     volumes:
       # Plugins
@@ -85,10 +49,10 @@ services:
   db:
     image: mariadb:10.11
     restart: always
+    env_file:
+      - .env
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       - MYSQL_USER=ctfd
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_DATABASE=ctfd
       - MARIADB_AUTO_UPGRADE=1
     volumes:
