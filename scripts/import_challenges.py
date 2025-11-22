@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Script d'importation automatique des challenges dans CTFd
-Lit les fichiers challenge.yml et crée les challenges via l'API CTFd
-"""
+
 
 import os
 import sys

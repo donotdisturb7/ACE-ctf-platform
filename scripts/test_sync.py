@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Script de test de synchronisation avec le site d'inscription ACE 2025
-Vérifie que CTFd peut communiquer avec le site et récupérer les équipes
-"""
-
 import os
 import sys
 import requests

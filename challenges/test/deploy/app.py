@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Challenge de test - ACE 2025
-Un challenge simple pour tester l'infrastructure CTFd
-"""
+
 
 from flask import Flask, render_template_string
 
