@@ -303,4 +303,4 @@ Pour toute question ou problème :
 
 ## Licence
 
-Projet ACE 2025 - Vizyon Dijital
+Projet ACE 2025 - Rénald DESIRE - Vizyon Dijital
