@@ -561,12 +561,12 @@ def load(app):
     if not scheduler or not scheduler.running:
         scheduler = BackgroundScheduler()
 
-        # Synchronisation toutes les minutes pour un rafraîchissement plus rapide
-        # (évite le rate limiting tout en restant réactif)
+        # Synchronisation toutes les 5 minutes (fallback si webhooks échouent)
+        # Les webhooks assurent la synchronisation temps réel
         scheduler.add_job(
             func=sync_teams_from_registration_site,
             trigger='interval',
-            minutes=1,
+            minutes=5,
             id='sync_teams',
             name='Sync teams from registration site',
             replace_existing=True
