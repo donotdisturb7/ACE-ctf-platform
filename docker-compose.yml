@@ -13,12 +13,14 @@ services:
       - DATABASE_URL=mysql+pymysql://ctfd:${MYSQL_PASSWORD}@db/ctfd
       - REDIS_URL=redis://cache:6379
 
+
     volumes:
       # Plugins
       - ./plugins/registration_sync:/opt/CTFd/CTFd/plugins/registration_sync
       - ./plugins/score_sync:/opt/CTFd/CTFd/plugins/score_sync
       - ./plugins/auth_sync:/opt/CTFd/CTFd/plugins/auth_sync
       - ./plugins/room_display:/opt/CTFd/CTFd/plugins/room_display
+      - ./plugins/disable_team_editing:/opt/CTFd/CTFd/plugins/disable_team_editing
 
       # Themes (optionnel)
       # NOTE: Le montage du volume themes écrase le thème core de CTFd

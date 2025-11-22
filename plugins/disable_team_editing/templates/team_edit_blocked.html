@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="jumbotron">
+    <div class="container">
+        <h1>Edition d'equipe desactivee</h1>
+    </div>
+</div>
+<div class="container">
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="alert alert-info">
+                <h4 class="alert-heading">Modification via le site d'inscription</h4>
+                <p>Les informations d'equipe sont gerees via le site d'inscription ACE Escape Game.</p>
+                <hr>
+                <p class="mb-0">
+                    Pour modifier votre equipe (nom, membres, etc.), veuillez vous connecter au site d'inscription :
+                    <br>
+                    <a href="{{ config.get('REGISTRATION_SITE_URL', 'http://localhost:3000') }}" class="btn btn-primary mt-3" target="_blank">
+                        Ouvrir le site d'inscription
+                    </a>
+                </p>
+            </div>
+            <a href="/teams" class="btn btn-secondary">Retour aux equipes</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
