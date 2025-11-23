@@ -105,12 +105,14 @@ def get_ctfd_scoreboard(app=None):
 
             scoreboard = []
             for position, team in enumerate(standings, start=1):
+                # get_standings retourne des objets avec account_id, name, score
                 scoreboard.append({
-                    'ctfd_team_id': team.id,
+                    'ctfd_team_id': team.account_id,  # Utiliser account_id au lieu de id
                     'team_name': team.name,
-                    'score': team.score,
+                    'score': int(team.score) if team.score else 0,  # Convertir Decimal en int
                     'rank': position
                 })
+
 
             return scoreboard
 
